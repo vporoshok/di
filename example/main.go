@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vporoshok/di"
 )
@@ -40,15 +41,7 @@ func (ur *UserRepository) Get(email string) (*User, error) {
 }
 
 type CreateUser struct {
-	rep *UserRepository
-}
-
-func NewCreateUser(ctx context.Context, dc di.Container) (interface{}, error) {
-	var rep *UserRepository
-	if err := dc.Get(ctx, "user repository", &rep); err != nil {
-		return nil, err
-	}
-	return &CreateUser{rep}, nil
+	Rep *UserRepository `di:"user repository"`
 }
 
 func (act *CreateUser) Do(email, name string) error {
@@ -56,17 +49,25 @@ func (act *CreateUser) Do(email, name string) error {
 		strings.ToLower(email),
 		name,
 	}
-	return act.rep.Insert(user)
+	return act.Rep.Insert(user)
+}
+
+type GetUser struct {
+	Rep interface {
+		Get(string) (*User, error)
+	} `di:"user repository"`
 }
 
 func main() {
+	ts := time.Now()
 	dc := di.NewContainer()
-	if err := dc.RegisterFunc("user repository", NewUserRepository); err != nil {
+	dc.RegisterFunc("user repository", NewUserRepository)
+	dc.RegisterStruct("create user", CreateUser{})
+	dc.RegisterStruct("get user", GetUser{})
+	if err := dc.Check(context.Background()); err != nil {
 		log.Fatal(err)
 	}
-	if err := dc.RegisterFunc("create user", NewCreateUser); err != nil {
-		log.Fatal(err)
-	}
+	log.Printf("dc created in %.2fms", float64(time.Since(ts))/float64(time.Millisecond))
 	var act interface {
 		Do(email, name string) error
 	}
@@ -84,4 +85,8 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Print("users added")
+	t := &GetUser{}
+	if err := dc.Get(context.Background(), "get user", &t); err != nil {
+		log.Fatal(err)
+	}
 }
