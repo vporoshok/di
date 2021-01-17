@@ -8,11 +8,13 @@ import (
 )
 
 type Container interface {
-	RegisterValue(name string, service interface{}, opts ...Option)
 	RegisterStruct(name string, service interface{}, opts ...Option)
-	RegisterFunc(name string, constructor func(context.Context, Container) (interface{}, error), opts ...Option)
+	RegisterFunc(name string, constructor interface{}, opts ...Option)
 	Check(context.Context) error
 	Get(ctx context.Context, name string, dst interface{}) error
+	MustGet(ctx context.Context, name string, dst interface{})
+	Make(ctx context.Context, constructor interface{}) (interface{}, error)
+	MustMake(ctx context.Context, constructor interface{}) interface{}
 }
 
 func NewContainer() Container {
@@ -27,12 +29,6 @@ type container struct {
 	locked       bool
 	singletones  map[string]interface{}
 	constructors map[string]func(ctx context.Context, dc Container) (interface{}, error)
-}
-
-func (dc *container) RegisterValue(name string, value interface{}, opts ...Option) {
-	dc.RegisterFunc(name, func(_ context.Context, _ Container) (interface{}, error) {
-		return value, nil
-	}, opts...)
 }
 
 func (dc *container) RegisterStruct(name string, service interface{}, opts ...Option) {
@@ -53,7 +49,7 @@ func (dc *container) RegisterStruct(name string, service interface{}, opts ...Op
 			m[i] = token
 		}
 	}
-	dc.RegisterFunc(name, func(ctx context.Context, _ Container) (interface{}, error) {
+	dc.addConstructor(name, func(ctx context.Context, _ Container) (interface{}, error) {
 		res := reflect.New(orig)
 		v := res
 		if v.Kind() == reflect.Ptr {
@@ -73,7 +69,14 @@ func (dc *container) RegisterStruct(name string, service interface{}, opts ...Op
 	}, opts...)
 }
 
-func (dc *container) RegisterFunc(
+func (dc *container) RegisterFunc(name string, constructor interface{}, opts ...Option) {
+	val := reflect.ValueOf(constructor)
+	t := val.Type()
+	// t.In()
+	_ = t
+}
+
+func (dc *container) addConstructor(
 	name string, constructor func(context.Context, Container) (interface{}, error), opts ...Option,
 ) {
 	if dc.locked || dc.err != nil {
