@@ -9,12 +9,12 @@ import (
 
 type Container interface {
 	RegisterStruct(name string, service interface{}, opts ...Option)
-	RegisterFunc(name string, constructor interface{}, opts ...Option)
+	// RegisterFunc(name string, constructor interface{}, opts ...Option)
 	Check(context.Context) error
 	Get(ctx context.Context, name string, dst interface{}) error
-	MustGet(ctx context.Context, name string, dst interface{})
-	Make(ctx context.Context, constructor interface{}) (interface{}, error)
-	MustMake(ctx context.Context, constructor interface{}) interface{}
+	// MustGet(ctx context.Context, name string, dst interface{})
+	// Make(ctx context.Context, constructor interface{}) (interface{}, error)
+	// MustMake(ctx context.Context, constructor interface{}) interface{}
 }
 
 func NewContainer() Container {
