@@ -117,7 +117,7 @@ func (dc *container) addConstructor(
 	dc.constructors[name] = constructor
 }
 
-func (dc *container) isExists(name) bool {
+func (dc *container) isExists(name string) bool {
 	if _, exists := dc.constructors[name]; exists {
 		return true
 	}
