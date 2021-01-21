@@ -9,6 +9,7 @@ import (
 
 type Container interface {
 	RegisterStruct(name string, service interface{}, opts ...Option)
+	RegisterInstance(name string, service interface{})
 	// RegisterFunc(name string, constructor interface{}, opts ...Option)
 	Lock() error
 	Check(context.Context) error
@@ -70,6 +71,17 @@ func (dc *container) RegisterStruct(name string, service interface{}, opts ...Op
 	}, opts...)
 }
 
+func (dc *container) RegisterInstance(name string, service interface{}) {
+	if dc.locked || dc.err != nil {
+		return
+	}
+	if dc.isExists(name) {
+		dc.err = fmt.Errorf("service %s already registered", name)
+		return
+	}
+	dc.singletones[name] = service
+}
+
 func (dc *container) RegisterFunc(name string, constructor interface{}, opts ...Option) {
 	val := reflect.ValueOf(constructor)
 	t := val.Type()
@@ -83,7 +95,7 @@ func (dc *container) addConstructor(
 	if dc.locked || dc.err != nil {
 		return
 	}
-	if _, exists := dc.constructors[name]; exists {
+	if dc.isExists(name) {
 		dc.err = fmt.Errorf("service %s already registered", name)
 		return
 	}
@@ -103,6 +115,16 @@ func (dc *container) addConstructor(
 		}
 	}
 	dc.constructors[name] = constructor
+}
+
+func (dc *container) isExists(name) bool {
+	if _, exists := dc.constructors[name]; exists {
+		return true
+	}
+	if _, exists := dc.singletones[name]; exists {
+		return true
+	}
+	return false
 }
 
 func (dc *container) Lock() error {
