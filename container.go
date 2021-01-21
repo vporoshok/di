@@ -10,10 +10,11 @@ import (
 type Container interface {
 	RegisterStruct(name string, service interface{}, opts ...Option)
 	RegisterInstance(name string, service interface{})
-	// RegisterFunc(name string, constructor interface{}, opts ...Option)
+	RegisterFunc(name string, constructor interface{}, opts ...Option)
 	Lock() error
 	Check(context.Context) error
 	Get(ctx context.Context, name string, dst interface{}) error
+	ProvideStruct(context.Context, interface{}) error
 	// MustGet(ctx context.Context, name string, dst interface{})
 	// Make(ctx context.Context, constructor interface{}) (interface{}, error)
 	// MustMake(ctx context.Context, constructor interface{}) interface{}
@@ -21,7 +22,7 @@ type Container interface {
 
 func NewContainer() Container {
 	return &container{
-		singletones:  map[string]interface{}{},
+		singletones:  map[string]reflect.Value{},
 		constructors: map[string]func(context.Context, Container) (interface{}, error){},
 	}
 }
@@ -29,7 +30,7 @@ func NewContainer() Container {
 type container struct {
 	err          error
 	locked       bool
-	singletones  map[string]interface{}
+	singletones  map[string]reflect.Value
 	constructors map[string]func(ctx context.Context, dc Container) (interface{}, error)
 }
 
@@ -39,36 +40,33 @@ func (dc *container) RegisterStruct(name string, service interface{}, opts ...Op
 	}
 	orig := reflect.TypeOf(service)
 	t := orig
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
 	if t.Kind() != reflect.Struct {
 		dc.err = fmt.Errorf("service should be an struct or pointer to struct, but got %T", service)
 		return
 	}
-	m := make(map[int]string, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		token := field.Tag.Get("di")
-		if token != "" {
-			m[i] = token
-		}
-	}
 	dc.addConstructor(name, func(ctx context.Context, _ Container) (interface{}, error) {
-		res := reflect.New(orig)
+		res := reflect.New(orig).Elem()
 		v := res
 		if v.Kind() == reflect.Ptr {
 			v = v.Elem()
 		}
-		for i, token := range m {
-			field := v.Field(i)
-			if field.Kind() == reflect.Ptr {
-				value := reflect.New(field.Type().Elem())
-				field.Set(value)
-			}
-			if err := dc.get(ctx, token, field); err != nil {
-				return nil, err
-			}
+		if err := dc.provideStruct(ctx, v); err != nil {
+			return nil, err
 		}
 		return res.Interface(), nil
 	}, opts...)
+}
+
+func (dc *container) ProvideStruct(ctx context.Context, s interface{}) error {
+	v := reflect.ValueOf(s)
+	t := v.Type()
+	if t.Kind() != reflect.Ptr || t.Elem().Kind() != reflect.Struct {
+		return fmt.Errorf("s should be an pointer to struct, but got %T", s)
+	}
+	return dc.provideStruct(ctx, v)
 }
 
 func (dc *container) RegisterInstance(name string, service interface{}) {
@@ -79,14 +77,68 @@ func (dc *container) RegisterInstance(name string, service interface{}) {
 		dc.err = fmt.Errorf("service %s already registered", name)
 		return
 	}
-	dc.singletones[name] = service
+	dc.singletones[name] = reflect.ValueOf(service)
 }
 
 func (dc *container) RegisterFunc(name string, constructor interface{}, opts ...Option) {
 	val := reflect.ValueOf(constructor)
 	t := val.Type()
-	// t.In()
-	_ = t
+	if t.Kind() != reflect.Func {
+		dc.err = fmt.Errorf("constructor should be an function, but got %T", constructor)
+		return
+	}
+	if t.NumOut() != 2 || t.Out(1).Name() != "error" {
+		dc.err = fmt.Errorf("constructor should return instance of service and error, but got %T", constructor)
+		return
+	}
+	dc.addConstructor(name, func(ctx context.Context, _ Container) (interface{}, error) {
+		args := make([]reflect.Value, t.NumIn())
+		for i := 0; i < t.NumIn(); i++ {
+			arg := t.In(i)
+			if arg.Name() == "context.Context" {
+				args[i] = reflect.ValueOf(ctx)
+			} else {
+				res := reflect.New(arg).Elem()
+				v := res
+				if v.Kind() == reflect.Ptr {
+					v = v.Elem()
+				}
+				if err := dc.provideStruct(ctx, v); err != nil {
+					return nil, err
+				}
+				args[i] = res
+			}
+		}
+		res := val.Call(args)
+		err := res[1].Interface()
+		if err == nil {
+			return res[0].Interface(), nil
+		}
+		return nil, err.(error)
+	}, opts...)
+}
+
+func (dc *container) provideStruct(ctx context.Context, v reflect.Value) error {
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		tfield := t.Field(i)
+		name := tfield.Tag.Get("di")
+		if name == "" {
+			continue
+		}
+		field := v.Field(i)
+		if field.Kind() == reflect.Ptr {
+			value := reflect.New(field.Type().Elem())
+			field.Set(value)
+		}
+		if err := dc.get(ctx, name, field); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (dc *container) addConstructor(
@@ -110,7 +162,7 @@ func (dc *container) addConstructor(
 				return res, nil
 			}
 			res, err := inner(ctx, dc)
-			dc.singletones[name] = res
+			dc.singletones[name] = reflect.ValueOf(res)
 			return res, err
 		}
 	}
@@ -155,6 +207,10 @@ func (dc *container) Get(ctx context.Context, name string, dst interface{}) erro
 }
 
 func (dc *container) get(ctx context.Context, name string, dstValue reflect.Value) error {
+	if service, ok := dc.singletones[name]; ok {
+		dstValue.Set(service)
+		return nil
+	}
 	constructor, ok := dc.constructors[name]
 	if !ok {
 		return fmt.Errorf("service %s not found", name)
@@ -164,7 +220,7 @@ func (dc *container) get(ctx context.Context, name string, dstValue reflect.Valu
 	if err != nil {
 		return err
 	}
-	if dstValue.Kind() != reflect.Interface && dstValue.IsNil() {
+	if dstValue.Kind() == reflect.Interface && dstValue.IsNil() {
 		return fmt.Errorf("dst must be a non nil pointer, got %s", dstValue.Kind())
 	}
 	srvValue := reflect.ValueOf(service)
