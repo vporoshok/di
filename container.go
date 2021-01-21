@@ -10,6 +10,7 @@ import (
 type Container interface {
 	RegisterStruct(name string, service interface{}, opts ...Option)
 	// RegisterFunc(name string, constructor interface{}, opts ...Option)
+	Lock() error
 	Check(context.Context) error
 	Get(ctx context.Context, name string, dst interface{}) error
 	// MustGet(ctx context.Context, name string, dst interface{})
@@ -104,11 +105,18 @@ func (dc *container) addConstructor(
 	dc.constructors[name] = constructor
 }
 
-func (dc *container) Check(ctx context.Context) error {
+func (dc *container) Lock() error {
 	if dc.locked || dc.err != nil {
 		return dc.err
 	}
 	dc.locked = true
+	return nil
+}
+
+func (dc *container) Check(ctx context.Context) error {
+	if err := dc.Lock(); err != nil {
+		return err
+	}
 	for name, constructor := range dc.constructors {
 		if _, err := constructor(ctx, dc); err != nil {
 			return fmt.Errorf("%s: %w", name, err)
