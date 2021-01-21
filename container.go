@@ -95,7 +95,7 @@ func (dc *container) RegisterFunc(name string, constructor interface{}, opts ...
 		args := make([]reflect.Value, t.NumIn())
 		for i := 0; i < t.NumIn(); i++ {
 			arg := t.In(i)
-			if arg.Name() == "context.Context" {
+			if arg.PkgPath() == "context" && arg.Name() == "Context" {
 				args[i] = reflect.ValueOf(ctx)
 			} else {
 				res := reflect.New(arg).Elem()

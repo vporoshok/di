@@ -20,7 +20,7 @@ func ExampleContainer() {
 	dc := di.NewContainer()
 	dc.RegisterInstance("foo", "bar")
 	dc.RegisterStruct("a", A{})
-	dc.RegisterFunc("b", func(x B) (*B, error) {
+	dc.RegisterFunc("b", func(_ context.Context, x B) (*B, error) {
 		return &x, nil
 	}, di.Singletone())
 	ctx := context.Background()
