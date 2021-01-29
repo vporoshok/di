@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/vporoshok/di"
 )
@@ -33,4 +34,19 @@ func ExampleContainer() {
 	}
 	fmt.Println(c.A.Foo)
 	// Output: bar
+}
+
+func ExampleContainer_Get() {
+	dc := di.NewContainer()
+	dc.RegisterInstance("log", log.New(os.Stdout, "", 0))
+	if err := dc.Lock(); err != nil {
+		log.Fatal(err)
+	}
+	ctx := context.Background()
+	var logger *log.Logger
+	if err := dc.Get(ctx, "log", &logger); err != nil {
+		log.Fatal(err)
+	}
+	logger.Print("test")
+	// Output: test
 }
