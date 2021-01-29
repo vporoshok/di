@@ -43,10 +43,7 @@ func ExampleContainer_Get() {
 		log.Fatal(err)
 	}
 	ctx := context.Background()
-	var logger *log.Logger
-	if err := dc.Get(ctx, "log", &logger); err != nil {
-		log.Fatal(err)
-	}
+	logger := dc.MustGet(ctx, "log").(*log.Logger)
 	logger.Print("test")
 	// Output: test
 }

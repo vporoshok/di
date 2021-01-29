@@ -13,11 +13,12 @@ type Container interface {
 	RegisterFunc(name string, constructor interface{}, opts ...Option)
 	Lock() error
 	Check(context.Context) error
-	Get(ctx context.Context, name string, dst interface{}) error
+	Get(ctx context.Context, name string) (interface{}, error)
+	MustGet(ctx context.Context, name string) interface{}
+	Provide(ctx context.Context, name string, dst interface{}) error
+	MustProvide(ctx context.Context, name string, dst interface{})
 	ProvideStruct(context.Context, interface{}) error
-	// MustGet(ctx context.Context, name string, dst interface{})
-	// Make(ctx context.Context, constructor interface{}) (interface{}, error)
-	// MustMake(ctx context.Context, constructor interface{}) interface{}
+	MustProvideStruct(context.Context, interface{})
 }
 
 func NewContainer() Container {
@@ -67,6 +68,12 @@ func (dc *container) ProvideStruct(ctx context.Context, s interface{}) error {
 		return fmt.Errorf("s should be an pointer to struct, but got %T", s)
 	}
 	return dc.provideStruct(ctx, v)
+}
+
+func (dc *container) MustProvideStruct(ctx context.Context, s interface{}) {
+	if err := dc.ProvideStruct(ctx, s); err != nil {
+		panic(err)
+	}
 }
 
 func (dc *container) RegisterInstance(name string, service interface{}) {
@@ -199,11 +206,31 @@ func (dc *container) Check(ctx context.Context) error {
 	return nil
 }
 
-func (dc *container) Get(ctx context.Context, name string, dst interface{}) error {
+func (dc *container) Get(ctx context.Context, name string) (interface{}, error) {
+	var res interface{}
+	err := dc.Provide(ctx, name, &res)
+	return res, err
+}
+
+func (dc *container) MustGet(ctx context.Context, name string) interface{} {
+	res, err := dc.Get(ctx, name)
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
+
+func (dc *container) Provide(ctx context.Context, name string, dst interface{}) error {
 	if !dc.locked {
 		return errors.New("container should be locked")
 	}
 	return dc.get(ctx, name, reflect.ValueOf(dst).Elem())
+}
+
+func (dc *container) MustProvide(ctx context.Context, name string, dst interface{}) {
+	if err := dc.Provide(ctx, name, dst); err != nil {
+		panic(err)
+	}
 }
 
 func (dc *container) get(ctx context.Context, name string, dstValue reflect.Value) error {
