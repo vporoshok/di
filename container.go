@@ -22,10 +22,12 @@ type Container interface {
 }
 
 func NewContainer() Container {
-	return &container{
+	dc := &container{
 		singletones:  map[string]reflect.Value{},
 		constructors: map[string]func(context.Context, Container) (interface{}, error){},
 	}
+	dc.singletones["di"] = reflect.ValueOf(dc)
+	return dc
 }
 
 type container struct {

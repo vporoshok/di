@@ -1,11 +1,15 @@
 package di_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
 	"os"
+	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/vporoshok/di"
 )
 
@@ -46,4 +50,16 @@ func ExampleContainer_Get() {
 	logger := dc.MustGet(ctx, "log").(*log.Logger)
 	logger.Print("test")
 	// Output: test
+}
+
+func TestDIName(t *testing.T) {
+	dc := di.NewContainer()
+	buf := new(bytes.Buffer)
+	dc.RegisterInstance("log", log.New(buf, "", 0))
+	require.NoError(t, dc.Lock())
+	ctx := context.Background()
+	container := dc.MustGet(ctx, "di").(di.Container)
+	logger := container.MustGet(ctx, "log").(*log.Logger)
+	logger.Print("test")
+	assert.Equal(t, "test\n", buf.String())
 }
