@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 )
 
@@ -19,6 +20,7 @@ type Container interface {
 	MustProvide(ctx context.Context, name string, dst interface{})
 	ProvideStruct(context.Context, interface{}) error
 	MustProvideStruct(context.Context, interface{})
+	MustProvideHTTPHandler(ctx context.Context, constructor interface{}) http.HandlerFunc
 }
 
 func NewContainer() Container {
@@ -233,6 +235,38 @@ func (dc *container) MustProvide(ctx context.Context, name string, dst interface
 	if err := dc.Provide(ctx, name, dst); err != nil {
 		panic(err)
 	}
+}
+
+func (dc *container) MustProvideHTTPHandler(ctx context.Context, constructor interface{}) http.HandlerFunc {
+	val := reflect.ValueOf(constructor)
+	t := val.Type()
+	if t.Kind() != reflect.Func {
+		panic(fmt.Errorf("constructor should be an function, but got %T", constructor))
+	}
+	if t.NumOut() != 1 || t.Out(0).PkgPath() != "net/http" || t.Out(0).Name() != "HandlerFunc" {
+		panic(fmt.Errorf(
+			"constructor should return http.HandlerFunc, but got %T (%s.%s)",
+			constructor, t.Out(0).PkgPath(), t.Out(0).Name()))
+	}
+	args := make([]reflect.Value, t.NumIn())
+	for i := 0; i < t.NumIn(); i++ {
+		arg := t.In(i)
+		if arg.PkgPath() == "context" && arg.Name() == "Context" {
+			args[i] = reflect.ValueOf(ctx)
+		} else {
+			res := reflect.New(arg).Elem()
+			v := res
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+			if err := dc.provideStruct(ctx, v); err != nil {
+				panic(err)
+			}
+			args[i] = res
+		}
+	}
+	res := val.Call(args)
+	return res[0].Interface().(http.HandlerFunc)
 }
 
 func (dc *container) get(ctx context.Context, name string, dstValue reflect.Value) error {

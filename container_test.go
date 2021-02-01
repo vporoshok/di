@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"testing"
 
@@ -62,4 +63,22 @@ func TestDIName(t *testing.T) {
 	logger := container.MustGet(ctx, "log").(*log.Logger)
 	logger.Print("test")
 	assert.Equal(t, "test\n", buf.String())
+}
+
+func TestMustProvideHTTPHandler(t *testing.T) {
+	dc := di.NewContainer()
+	buf := new(bytes.Buffer)
+	dc.RegisterInstance("log", log.New(buf, "", 0))
+	require.NoError(t, dc.Lock())
+	ctx := context.Background()
+	handler := dc.MustProvideHTTPHandler(ctx, func(dep struct {
+		L *log.Logger `di:"log"`
+	}) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			dep.L.Print(r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+	assert.HTTPStatusCode(t, handler, http.MethodGet, "/foo", nil, http.StatusOK)
+	assert.Equal(t, "/foo\n", buf.String())
 }
