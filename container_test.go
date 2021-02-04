@@ -43,12 +43,29 @@ func ExampleContainer() {
 
 func ExampleContainer_Get() {
 	dc := di.NewContainer()
-	dc.RegisterInstance("log", log.New(os.Stdout, "", 0))
+	dc.RegisterFunc("log", func() (*log.Logger, error) {
+		return log.New(os.Stdout, "", 0), nil
+	})
 	if err := dc.Lock(); err != nil {
 		log.Fatal(err)
 	}
 	ctx := context.Background()
 	logger := dc.MustGet(ctx, "log").(*log.Logger)
+	logger.Print("test")
+	// Output: test
+}
+
+func ExampleContainer_RegisterStruct() {
+	dc := di.NewContainer()
+	dc.RegisterInstance("log", log.New(os.Stdout, "", 0))
+	dc.RegisterStruct("a", &struct {
+		*log.Logger `di:"log"`
+	}{})
+	if err := dc.Lock(); err != nil {
+		log.Fatal(err)
+	}
+	ctx := context.Background()
+	logger := dc.MustGet(ctx, "a").(interface{ Print(...interface{}) })
 	logger.Print("test")
 	// Output: test
 }

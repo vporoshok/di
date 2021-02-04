@@ -44,22 +44,23 @@ func (dc *container) RegisterStruct(name string, service interface{}, opts ...Op
 		return
 	}
 	orig := reflect.TypeOf(service)
-	t := orig
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
+	isPointer := false
+	if orig.Kind() == reflect.Ptr {
+		isPointer = true
+		orig = orig.Elem()
 	}
-	if t.Kind() != reflect.Struct {
+	if orig.Kind() != reflect.Struct {
 		dc.err = fmt.Errorf("service should be an struct or pointer to struct, but got %T", service)
 		return
 	}
 	dc.addConstructor(name, func(ctx context.Context, _ Container) (interface{}, error) {
 		res := reflect.New(orig).Elem()
 		v := res
-		if v.Kind() == reflect.Ptr {
-			v = v.Elem()
-		}
 		if err := dc.provideStruct(ctx, v); err != nil {
 			return nil, err
+		}
+		if isPointer {
+			res = res.Addr()
 		}
 		return res.Interface(), nil
 	}, opts...)
@@ -145,7 +146,7 @@ func (dc *container) provideStruct(ctx context.Context, v reflect.Value) error {
 			value := reflect.New(field.Type().Elem())
 			field.Set(value)
 		}
-		if err := dc.get(ctx, name, field); err != nil {
+		if err := dc.provide(ctx, name, field); err != nil {
 			return err
 		}
 	}
@@ -228,7 +229,7 @@ func (dc *container) Provide(ctx context.Context, name string, dst interface{}) 
 	if !dc.locked {
 		return errors.New("container should be locked")
 	}
-	return dc.get(ctx, name, reflect.ValueOf(dst).Elem())
+	return dc.provide(ctx, name, reflect.ValueOf(dst).Elem())
 }
 
 func (dc *container) MustProvide(ctx context.Context, name string, dst interface{}) {
@@ -269,7 +270,7 @@ func (dc *container) MustProvideHTTPHandler(ctx context.Context, constructor int
 	return res[0].Interface().(http.HandlerFunc)
 }
 
-func (dc *container) get(ctx context.Context, name string, dstValue reflect.Value) error {
+func (dc *container) provide(ctx context.Context, name string, dstValue reflect.Value) error {
 	if service, ok := dc.singletones[name]; ok {
 		dstValue.Set(service)
 		return nil
@@ -282,9 +283,6 @@ func (dc *container) get(ctx context.Context, name string, dstValue reflect.Valu
 	service, err := constructor(ctx, dc)
 	if err != nil {
 		return err
-	}
-	if dstValue.Kind() == reflect.Interface && dstValue.IsNil() {
-		return fmt.Errorf("dst must be a non nil pointer, got %s", dstValue.Kind())
 	}
 	srvValue := reflect.ValueOf(service)
 	dstType := dstValue.Type()
