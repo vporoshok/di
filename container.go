@@ -167,16 +167,14 @@ func (dc *container) addConstructor(
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	if cfg.Singletone {
-		inner := constructor
-		constructor = func(ctx context.Context, _ Container) (interface{}, error) {
-			if res, ok := dc.singletones[name]; ok {
-				return res, nil
-			}
-			res, err := inner(ctx, dc)
-			dc.singletones[name] = reflect.ValueOf(res)
-			return res, err
+	inner := constructor
+	constructor = func(ctx context.Context, _ Container) (interface{}, error) {
+		if res, ok := dc.singletones[name]; ok {
+			return res, nil
 		}
+		res, err := inner(ctx, dc)
+		dc.singletones[name] = reflect.ValueOf(res)
+		return res, err
 	}
 	dc.constructors[name] = constructor
 }

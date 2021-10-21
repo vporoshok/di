@@ -28,7 +28,7 @@ func ExampleContainer() {
 	dc.RegisterStruct("a", A{})
 	dc.RegisterFunc("b", func(_ context.Context, x B) (*B, error) {
 		return &x, nil
-	}, di.Singletone())
+	})
 	ctx := context.Background()
 	if err := dc.Check(ctx); err != nil {
 		log.Fatal(err)

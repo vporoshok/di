@@ -1,13 +1,5 @@
 package di
 
-type config struct {
-	Singletone bool
-}
+type config struct{}
 
 type Option func(*config)
-
-func Singletone() Option {
-	return func(cfg *config) {
-		cfg.Singletone = true
-	}
-}
